@@ -71,7 +71,7 @@ def land_f(s, l, j):
 		return 3./2. + (s * (s + 1.) - l * (l + 1.)) / (2. * j * (j + 1.))
 
 def lamb_vec(lamb0, n):
-	deltal = 1. + (lamb0 - 5000.) * 0.5/10000.
+	deltal = 1. + (lamb0 - 5000.) * 1./10000.
 	return np.linspace(lamb0-deltal, lamb0+deltal, num = n, endpoint=True)
 	#return (np.arange(0,201)-100)*0.01 + lamb0
 
@@ -216,7 +216,7 @@ def lineas(filename, ind_in):
 			return elem, ions, lamb, vandw_factor, potexc, s1, l1, j1, s2, l2, j2, param1, param2, mn
 	return None
 
-def sintetizador(Bmag, deltalambdaD, omegam, theta, chi, br, adamp, eta0, lamb0, lambv, s2, l2, j2, s1, l1, j1, mn):
+def sintetizador(Bmag, deltalambdaD, omegam, theta, chi, br, adamp, eta0, lamb0, lambv, s2, l2, j2, s1, l1, j1, mn, noise=None):
 	npoints = np.shape(lambv)
 	#DETERMINAMOS LOS FACTORES DE LANDE DE CADA NIVEL
 	g1 = land_f(s1, l1, j1)
@@ -224,7 +224,7 @@ def sintetizador(Bmag, deltalambdaD, omegam, theta, chi, br, adamp, eta0, lamb0,
 	#CONSTANTES UTILES:
 	c = 2.99792458e+8
 	mas = 1.66053886e-27*mn
-	print deltalambdaD
+	
 	v = (lambv - lamb0) / deltalambdaD
 	vm = omegam / (c) * lamb0 / deltalambdaD
 	#INICIALIZAMOS VALORES PARA EL MOMENTO ANGULAR MAGNETICO DE CADA NIVEL:
@@ -297,6 +297,12 @@ def sintetizador(Bmag, deltalambdaD, omegam, theta, chi, br, adamp, eta0, lamb0,
 	stokq = - br / (1. + br) * deltaM**(-1.) * (etai**2. * etaq + etai * (etav * rhou - etau * rhov) + rhoq * (etaq * rhoq + etau * rhou + etav * rhov))
 	stoku = - br / (1. + br) * deltaM**(-1.) * (etai**2. * etau + etai * (etaq * rhov - etav * rhoq) + rhou * (etaq * rhoq + etau * rhou + etav * rhov))
 	stokv = - br / (1. + br) * deltaM**(-1.) * (etai**2. * etav + etai * (etau * rhoq - etaq * rhou) + rhov * (etaq * rhoq + etau * rhou + etav * rhov))
+
+	if (noise != None):
+		stoki = stoki + np.random.randn(npoints[0]) * noise
+		stokq = stokq + np.random.randn(npoints[0]) * noise
+		stoku = stoku + np.random.randn(npoints[0]) * noise
+		stokv = stokv + np.random.randn(npoints[0]) * noise
 
 	return stoki, stokq, stoku, stokv
 
@@ -1000,201 +1006,98 @@ def derivador(Bmag, deltalambdaD, omegam, theta, chi, br, adamp, eta0, lamb0, la
 
 	return si, sq, su, sv
 
-################################
-# PARAMETROS DE CONTROL
-#   PARAMETROS ATOMInp.cos
-name = 'LINES'
-ind_in = '202'
-#   PARAMETROS DEL MODELO MILNE EDINGTON
-oBmag = 1500.
-odeltalambdaD = 0.019309069
-oomegam = 100.
-otheta = 45. * np.pi / 180.
-ochi = 30. * np.pi / 180.
-obr = 4.
-oadamp = 1.
-oeta0 = 0.6
-#
-###############################
-npoint = 201
-###############################
+def marquadt(stokIn, stokQn, stokUn, stokVn, Bmag, deltalambdaD, omegam, theta, chi, br, adamp, eta0, lamb, lambv, s1, l1, j1, s2, l2, j2, mn, itmax=10, lambdap=10., noise=1.,Mneg=None,fact=10.):
+	nparam = 8l
+	itm = 0l
+	condit = 1l
+	npoint = 4l * len(lambv)
 
-elem, ions, lamb, vandw_factor, potexc, s1, l1, j1, s2, l2, j2, param1, param2, mn = lineas(name, ind_in)
+	stokIp, stokQp, stokUp, stokVp = sintetizador(Bmag, deltalambdaD, omegam, theta, chi, br, adamp, eta0, lamb, lambv, s1, l1, j1, s2, l2, j2, mn)
 
+	while (condit == 1):
 
-#########################################
-vt = np.sqrt(2.) * 1000.
-odeltalambdaD = (lamb * vt) / 2.99792458e+8
-#########################################
+        	chi2 = (((stokIn - stokIp) / noise)**2. + \
+                	((stokQn - stokQp) / noise)**2. + \
+                	((stokUn - stokUp) / noise)**2. + \
+                	((stokVn - stokVp) / noise)**2.).sum()
 
-# VECTOR DE LAMBDAS
-lambv = lamb_vec(lamb, npoint)
+        	deris, derqs, derus, dervs = derivador(Bmag, deltalambdaD, omegam, theta, chi, br, adamp, eta0, lamb, lambv, s1, l1, j1, s2, l2, j2, mn)
 
+        	beta = np.zeros((nparam))
+        	alphap = np.zeros((nparam, nparam))
 
-stokI, stokQ, stokU, stokV = sintetizador(oBmag, odeltalambdaD, oomegam, otheta, ochi, obr, oadamp, oeta0, lamb, lambv, s1, l1, j1, s2, l2, j2, mn)
+		if (Mneg == None):
+#AQUI HABRA QUE HACER MODIFICACIONES PARA LA ESTIMACION DE ENTRADA
+        		Mneg = np.diag(np.repeat(1./noise**2., npoint))
 
-fdata = open('pyt_stokes.dat', 'w')
-for i in range(len(stokI)):
-    fdata.write('%f20.12   %f20.12   %f20.12   %f20.12\n' % (stokI[i], stokQ[i], stokU[i], stokV[i]))
-fdata.close()
+		s = np.concatenate([(stokIn - stokIp), (stokQn - stokQp), (stokUn - stokUp), (stokVn - stokVp)])
+       		mat = np.dot(Mneg,s)
 
+        	for index in range(nparam):
+			r = np.concatenate([deris[index,:], derqs[index,:], derus[index,:], dervs[index,:]])
+                	beta[index] = np.dot(r, mat)
 
-stdi = 1.e-3
-stdq = 1.e-3
-stdu = 1.e-3
-stdv = 1.e-3
+        	for index1 in range(nparam):
+                	for index2 in range(nparam):
+				r1 = np.concatenate([deris[index1,:], derqs[index1,:], derus[index1,:], dervs[index1,:]])
+				r2 = np.concatenate([deris[index2,:], derqs[index2,:], derus[index2,:], dervs[index2,:]])
+				alphap[index1, index2] = np.dot(r1, np.dot(Mneg,r2))
+                        	if (index1 == index2):
+                                	alphap[index1, index1] = alphap[index1, index1] * (1. + lambdap)
 
-stokIn = stokI + np.random.randn(npoint) * stdi
-stokQn = stokQ + np.random.randn(npoint) * stdq
-stokUn = stokU + np.random.randn(npoint) * stdu
-stokVn = stokV + np.random.randn(npoint) * stdv
+        	#for index1 in range(nparam):
+                	#for index2 in range(nparam):
+                        	#alphap[index1, index2] = (1. / noise**2. * (deris[index1,:] * deris[index2,:]) + \
+                                	#1. / noise**2. * (derqs[index1,:] * derqs[index2,:]) + \
+                                	#1. / noise**2. * (derus[index1,:] * derus[index2,:]) + \
+                                	#1. / noise**2. * (dervs[index1,:] * dervs[index2,:])).sum()
+				#if (index1 == index2):
+					#alphap[index1, index1] = alphap[index1, index1] * (1. + lambdap)
+                			#beta[index1] = ((stokIn - stokIp) / noise**2. * deris[index1, :] + \
+                        			#(stokQn - stokQp) / noise**2. * derqs[index1, :] + \
+                        			#(stokUn - stokUp) / noise**2. * derus[index1, :] + \
+                        			#(stokVn - stokVp) / noise**2. * dervs[index1, :]).sum()
 
+        	perturb, _, _, _ = np.linalg.lstsq(alphap, beta)#, rcond = 1.e-5)
 
-pl.subplot(221)
-pl.plot(lambv-lamb, stokI, 'b')
-pl.title('Stokes I')
-pl.xlabel('$\Delta\lambda\,[\AA]$')
+        	sBmag = np.abs(Bmag + perturb[4])
+        	sadamp = adamp + perturb[5]
+        	somegam = omegam + perturb[7]
+        	sdeltalambdaD = deltalambdaD + perturb[6]
+        	stheta = theta + perturb[2]
+        	schi = chi + perturb[3]
+        	seta0 = eta0 + perturb[1]
+        	sbr = br + perturb[0]
 
-pl.subplot(222)
-pl.plot(lambv-lamb, stokQ, 'g')
-pl.title('Stokes Q')
-pl.xlabel('$\Delta\lambda\,[\AA]$')
+        	stokIs, stokQs, stokUs, stokVs = sintetizador(sBmag, sdeltalambdaD, somegam, stheta, schi, sbr, sadamp, seta0, lamb, lambv, s1, l1, j1, s2, l2, j2, mn)
 
-pl.subplot(223)
-pl.plot(lambv-lamb, stokU, 'r')
-pl.title('Stokes U')
-pl.xlabel('$\Delta\lambda\,[\AA]$')
+        	chi2s = (((stokIn - stokIs) / noise)**2. + \
+                	((stokQn - stokQs) / noise)**2. + \
+                	((stokUn - stokUs) / noise)**2. + \
+                	((stokVn - stokVs) / noise)**2.).sum()
 
-pl.subplot(224)
-pl.plot(lambv-lamb, stokV, 'c')
-pl.title('Stokes V')
-pl.xlabel('$\Delta\lambda\,[\AA]$')
-pl.show()
+        	if (chi2s > chi2):
+                	lambdap = lambdap * fact
+        	else:
+                	Bmag = sBmag
+                	adamp = sadamp
+                	omegam = somegam
+                	deltalambdaD = sdeltalambdaD
+                	theta = stheta
+                	chi = schi
+                	eta0 = seta0
+                	br = sbr
+                	lambdap = lambdap / fact
+                	if (lambdap < 1.e-5): lambdap = 1.e-5
 
-#MARQUADT
+        	stokIp = stokIs.copy()
+        	stokQp = stokQs.copy()
+        	stokUp = stokUs.copy()
+        	stokVp = stokVs.copy()
 
-Bmag = 2000.
-deltalambdaD = 0.05
-omegam = 300.
-theta = 60. / 180. * np.pi
-chi = 50. / 180. * np.pi
-br = 6.
-adamp = 2.5
-eta0 = 1.5
-#######################################
-#Bmag = 1500.
-#deltalambdaD = 0.024749722
-#omegam = 0.1
-#theta = 45. * np.pi / 180.
-#chi = 30. * np.pi / 180.
-#br = 4.
-#adamp = 1.
-#eta0 = 0.6
-#######################################
+        	itm += 1
+		
+        	if (itm > itmax): condit = 0
 
-condit = 1
-nparam = 8l
-lambdap = 10.
-itm = 0l
+	return Bmag, omegam, adamp, br, theta * 180. / np.pi, chi * 180. / np.pi, eta0, deltalambdaD
 
-stokIp, stokQp, stokUp, stokVp = sintetizador(Bmag, deltalambdaD, omegam, theta, chi, br, adamp, eta0, lamb, lambv, s1, l1, j1, s2, l2, j2, mn)
-
-while (condit == 1):
-
-	print Bmag, omegam, adamp, br, theta * 180. / np.pi, chi * 180. / np.pi, eta0, deltalambdaD
-	pl.subplot(2,2,1)
-	pl.plot(stokIn, 'b')
-	pl.plot(stokIp, 'r')
-	pl.subplot(2,2,2)
-	pl.plot(stokQn, 'b')
-	pl.plot(stokQp, 'r')
-	pl.subplot(2,2,3)
-	pl.plot(stokUn, 'b')
-	pl.plot(stokUp, 'r')
-	pl.subplot(2,2,4)
-	pl.plot(stokVn, 'b')
-	pl.plot(stokVp, 'r')
-	pl.show()
-	chi2 = (((stokIn - stokIp) / stdi)**2. + \
-		((stokQn - stokQp) / stdq)**2. + \
-		((stokUn - stokUp) / stdu)**2. + \
-		((stokVn - stokVp) / stdv)**2.).sum()
-	
-	#print Bmag, deltalambdaD, omegam, theta, chi, br, adamp, eta0, lamb, s1, l1, j1, s2, l2, j2, mn
-	deris, derqs, derus, dervs = derivador(Bmag, deltalambdaD, omegam, theta, chi, br, adamp, eta0, lamb, lambv, s1, l1, j1, s2, l2, j2, mn)
-
-	#outdata = open('pyt_derivadas.dat', 'w')
-	#for i in range(nparam):
-		#for j in range(npoint):
-			#outdata.write('%f20.12   %f20.12   %f20.12   %f20.12\n' % (deris[i, j], derqs[i, j], derus[i, j], dervs[i, j]))
-	#outdata.close()
-	#pdb.set_trace()
-
-	beta = np.zeros((nparam))
-	alpha = np.zeros((nparam, nparam))
-	alphap = np.zeros((nparam, nparam))
-	
-	for index1 in range(nparam):
-		for index2 in range(nparam):
-			alpha[index1, index2] = (1. / stdi**2. * (deris[index1,:] * deris[index2,:]) + \
-				1. / stdq**2. * (derqs[index1,:] * derqs[index2,:]) + \
-				1. / stdu**2. * (derus[index1,:] * derus[index2,:]) + \
-				1. / stdv**2. * (dervs[index1,:] * dervs[index2,:])).sum()
-
-	alphap = np.copy(alpha)
-	for index in range(nparam):
-		beta[index] = ((stokIn - stokIp) / stdi**2. * deris[index, :] + \
-			(stokQn - stokQp) / stdq**2. * derqs[index, :] + \
-			(stokUn - stokUp) / stdu**2. * derus[index, :] + \
-			(stokVn - stokVp) / stdv**2. * dervs[index, :]).sum()
-		alphap[index, index] = alphap[index, index] * (1. + lambdap)
-
-	print '%20.12e  %20.12e  %20.12e  %20.12e  %20.12e  %20.12e  %20.12e  %20.12e' % (alphap[4, 4], alphap[7, 7], alphap[5, 5], alphap[0, 0], alphap[2, 2], alphap[3, 3], alphap[1, 1], alphap[6, 6])
-	print '%20.12e  %20.12e  %20.12e  %20.12e  %20.12e  %20.12e  %20.12e  %20.12e' % (beta[4], beta[7], beta[5], beta[0], beta[2], beta[3], beta[1], beta[6])
-	
-	perturb, _, _, _ = np.linalg.lstsq(alphap, beta)
-
-	print ('%10.4f  %10.4f  %10.4f  %10.4f  %10.4f  %10.4f  %10.4f  %10.4f') % (perturb[4], perturb[7], perturb[5], perturb[0], perturb[2], perturb[3], perturb[1], perturb[6])
-	#pdb.set_trace()
-	##print ('%10.4f  %10.4f  %10.4f  %10.4f  %10.4f  %10.4f  %10.4f  %10.4f') % (perturb[0], perturb[1], perturb[2], perturb[3], perturb[4], perturb[5], perturb[6], perturb[7])
-	sBmag = np.abs(Bmag + perturb[4])
-	sadamp = adamp + perturb[5]
-	somegam = omegam + perturb[7]
-	sdeltalambdaD = deltalambdaD + perturb[6]
-	stheta = theta + perturb[2]
-	schi = chi + perturb[3]
-	seta0 = eta0 + perturb[1]
-	sbr = br + perturb[0]
-	#print omegam
-
-	stokIs, stokQs, stokUs, stokVs = sintetizador(sBmag, sdeltalambdaD, somegam, stheta, schi, sbr, sadamp, seta0, lamb, lambv, s1, l1, j1, s2, l2, j2, mn)
-
-	chi2s = (((stokIn - stokIs) / stdi)**2. + \
-		((stokQn - stokQs) / stdq)**2. + \
-		((stokUn - stokUs) / stdu)**2. + \
-		((stokVn - stokVs) / stdv)**2.).sum()
-
-	if (chi2s > chi2):
-		lambdap = lambdap * 10.
-		print 'a'
-	else:
-		Bmag = sBmag
-		adamp = sadamp
-		omegam = somegam
-		deltalambdaD = sdeltalambdaD
-		theta = stheta
-		chi = schi
-		eta0 = seta0
-		br = sbr
-		lambdap = lambdap / 10.
-		if (lambdap < 1.e-5): lambdap = 1.e-5
-		print 'b'
-
-	stokIp = stokIs.copy()
-	stokQp = stokQs.copy()
-	stokUp = stokUs.copy()
-	stokVp = stokVs.copy()
-
-	itm += 1
-
-	if (itm > 1000): break
