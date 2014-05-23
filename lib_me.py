@@ -1015,12 +1015,7 @@ def marquadt(stokIn, stokQn, stokUn, stokVn, Bmag, deltalambdaD, omegam, theta, 
 	stokIp, stokQp, stokUp, stokVp = sintetizador(Bmag, deltalambdaD, omegam, theta, chi, br, adamp, eta0, lamb, lambv, s1, l1, j1, s2, l2, j2, mn)
 
 	while (condit == 1):
-
-        	chi2 = (((stokIn - stokIp) / noise)**2. + \
-                	((stokQn - stokQp) / noise)**2. + \
-                	((stokUn - stokUp) / noise)**2. + \
-                	((stokVn - stokVp) / noise)**2.).sum()
-
+        
         	deris, derqs, derus, dervs = derivador(Bmag, deltalambdaD, omegam, theta, chi, br, adamp, eta0, lamb, lambv, s1, l1, j1, s2, l2, j2, mn)
 
         	beta = np.zeros((nparam))
@@ -1029,19 +1024,25 @@ def marquadt(stokIn, stokQn, stokUn, stokVn, Bmag, deltalambdaD, omegam, theta, 
 		if (Mneg == None):
 #AQUI HABRA QUE HACER MODIFICACIONES PARA LA ESTIMACION DE ENTRADA
         		Mneg = np.diag(np.repeat(1./noise**2., npoint))
+        		        
+        #chi2 = (((stokIn - stokIp) / noise)**2. + \
+                	#((stokQn - stokQp) / noise)**2. + \
+                	#((stokUn - stokUp) / noise)**2. + \
+                	#((stokVn - stokVp) / noise)**2.).sum()
 
 		s = np.concatenate([(stokIn - stokIp), (stokQn - stokQp), (stokUn - stokUp), (stokVn - stokVp)])
-       		mat = np.dot(Mneg,s)
+		chi2 = np.dot(s.T,np.dot(Mneg,s))
+       		mat = np.dot(Mneg+Mneg.T,s)
 
         	for index in range(nparam):
 			r = np.concatenate([deris[index,:], derqs[index,:], derus[index,:], dervs[index,:]])
                 	beta[index] = np.dot(r, mat)
-
+						
         	for index1 in range(nparam):
                 	for index2 in range(nparam):
 				r1 = np.concatenate([deris[index1,:], derqs[index1,:], derus[index1,:], dervs[index1,:]])
 				r2 = np.concatenate([deris[index2,:], derqs[index2,:], derus[index2,:], dervs[index2,:]])
-				alphap[index1, index2] = np.dot(r1, np.dot(Mneg,r2))
+				alphap[index1, index2] = np.dot(r1, np.dot(Mneg+Mneg.T,r2))
                         	if (index1 == index2):
                                 	alphap[index1, index1] = alphap[index1, index1] * (1. + lambdap)
 
@@ -1069,12 +1070,15 @@ def marquadt(stokIn, stokQn, stokUn, stokVn, Bmag, deltalambdaD, omegam, theta, 
         	seta0 = eta0 + perturb[1]
         	sbr = br + perturb[0]
 
-        	stokIs, stokQs, stokUs, stokVs = sintetizador(sBmag, sdeltalambdaD, somegam, stheta, schi, sbr, sadamp, seta0, lamb, lambv, s1, l1, j1, s2, l2, j2, mn)
+		stokIs, stokQs, stokUs, stokVs = sintetizador(sBmag, sdeltalambdaD, somegam, stheta, schi, sbr, sadamp, seta0, lamb, lambv, s1, l1, j1, s2, l2, j2, mn)
 
-        	chi2s = (((stokIn - stokIs) / noise)**2. + \
-                	((stokQn - stokQs) / noise)**2. + \
-                	((stokUn - stokUs) / noise)**2. + \
-                	((stokVn - stokVs) / noise)**2.).sum()
+		s = np.concatenate([(stokIn - stokIs), (stokQn - stokQs), (stokUn - stokUs), (stokVn - stokVs)])
+        	chi2s = np.dot(s.T,np.dot(Mneg,s))
+        	
+        	#chi2s = (((stokIn - stokIs) / noise)**2. + \
+                	#((stokQn - stokQs) / noise)**2. + \
+                	#((stokUn - stokUs) / noise)**2. + \
+                	#((stokVn - stokVs) / noise)**2.).sum()
 
         	if (chi2s > chi2):
                 	lambdap = lambdap * fact
@@ -1096,6 +1100,8 @@ def marquadt(stokIn, stokQn, stokUn, stokVn, Bmag, deltalambdaD, omegam, theta, 
         	stokVp = stokVs.copy()
 
         	itm += 1
+        	
+        	print "Marquardt it. {0} - chi2={1}".format(itm,chi2s)
 		
         	if (itm > itmax): condit = 0
 

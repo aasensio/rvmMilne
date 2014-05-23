@@ -3,6 +3,16 @@ from scipy.linalg import cholesky
 import pdb
 #from pyandres import cholInvert
 
+###########################################
+# Return the inverse of a matrix and its logDeterminant
+###########################################
+def cholInvert(A):
+	L = np.linalg.cholesky(A)
+	LInv = np.linalg.inv(L)
+	AInv = np.dot(LInv.T, LInv)
+	logDeterminant = -2.0 * np.sum(np.log(np.diag(LInv)))   # Why the minus sign?
+	return AInv, logDeterminant
+
 class rvm(object):
 	
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -178,7 +188,7 @@ class rvm(object):
 		self.Sigma = np.dot(Ui, Ui.T)
 		
 		self.Mneg = np.diag(np.repeat(self.beta,N)) - self.beta ** 2. * np.dot(self.PHI, np.dot(self.Sigma, self.PHI.T))
-		
+		print self.beta
 		
 # Posterior mean
 		self.Mu = np.dot(self.Sigma, np.dot(self.PHI.T, self.targets)) * self.beta
@@ -447,8 +457,9 @@ class rvm(object):
 					print "Noise update. Termination deferred"
 		
 		#self.AInv = np.diag(1.0/self.Alpha[:,0])
-		#Sigma = 1.0/self.beta * np.identity(self.N) + np.dot(np.dot(self.PHI, self.AInv), self.PHI.T)
+		#Sigma = 1.0/self.beta * np.identity(self.N) + np.dot(np.dot(self.PHI, self.AInv), self.PHI.T)		
 		#CInv, logD = cholInvert(Sigma)
+		#pdb.set_trace()
 		#logL = -0.5*logD - 0.5*np.dot(np.dot(self.targets.T,CInv),self.targets)
 				
 		print "{0:4d} - L={1:10.7f} - Gamma={2:10.7f} (M={3:4d}) - s={4:6.4f}".format(self.loop,self.logML[0][0]/N, np.sum(self.Gamm), M, np.sqrt(1.0/self.beta))
@@ -742,7 +753,7 @@ while (conditrvmme != 1):
 	#pl.plot(marqinV, 'r')
 	#pl.show()
 
-	iBmag, iomegam, iadamp, ibr, itheta, ichi, ieta0, ideltalambdaD = me.marquadt(marqinI, marqinQ, marqinU, marqinV, Bmag, deltalambdaD, omegam, theta, chi, br, adamp, eta0, lamb, lambv, s1, l1, j1, s2, l2, j2, mn, itmax=10, lambdap=10., noise=1.,Mneg=p.Mneg,fact=2.)
+	iBmag, iomegam, iadamp, ibr, itheta, ichi, ieta0, ideltalambdaD = me.marquadt(marqinI, marqinQ, marqinU, marqinV, Bmag, deltalambdaD, omegam, theta, chi, br, adamp, eta0, lamb, lambv, s1, l1, j1, s2, l2, j2, mn, itmax=3, lambdap=10., noise=1.e-3,Mneg=p.Mneg,fact=2.)
 	
 	stokIp, stokQp, stokUp, stokVp = me.sintetizador(iBmag, ideltalambdaD, iomegam, itheta / 180. * np.pi, ichi / 180. * np.pi, ibr, iadamp, ieta0, lamb, lambv, s1, l1, j1, s2, l2, j2, mn)
 
@@ -768,7 +779,7 @@ while (conditrvmme != 1):
 	p.TargetsUpdate(rvmin)
 	p.nIteration(4)
 
-	pdb.set_trace()
+	#pdb.set_trace()
 
 	pl.close()
 
