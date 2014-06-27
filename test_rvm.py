@@ -187,9 +187,9 @@ class rvm(object):
 		Ui = np.linalg.inv(U)		
 		self.Sigma = np.dot(Ui, Ui.T)
 		
-		self.Mneg = np.diag(np.repeat(self.beta,N)) - self.beta ** 2. * np.dot(self.PHI, np.dot(self.Sigma, self.PHI.T))
-		print self.beta
-		
+# Compute the matrix (beta^-1*I + Phi*A^-1*Phi^T)^-1 using the Woodbury identity
+		self.Mneg = self.beta * np.identity(N) - self.beta**2 * np.dot(self.PHI, np.dot(self.Sigma, self.PHI.T))
+				
 # Posterior mean
 		self.Mu = np.dot(self.Sigma, np.dot(self.PHI.T, self.targets)) * self.beta
 		self.Mu = np.reshape(self.Mu,(self.Mu.size,1))
@@ -456,15 +456,15 @@ class rvm(object):
 					self.selectedAction = self.actionNoiseOnly
 					print "Noise update. Termination deferred"
 		
+		#self.fullStatistics()
 		#self.AInv = np.diag(1.0/self.Alpha[:,0])
-		#Sigma = 1.0/self.beta * np.identity(self.N) + np.dot(np.dot(self.PHI, self.AInv), self.PHI.T)		
+		#Sigma = 1.0/self.beta * np.identity(self.N) + np.dot(self.PHI, np.dot(self.AInv, self.PHI.T))
 		#CInv, logD = cholInvert(Sigma)
-		#pdb.set_trace()
 		#logL = -0.5*logD - 0.5*np.dot(np.dot(self.targets.T,CInv),self.targets)
 				
 		print "{0:4d} - L={1:10.7f} - Gamma={2:10.7f} (M={3:4d}) - s={4:6.4f}".format(self.loop,self.logML[0][0]/N, np.sum(self.Gamm), M, np.sqrt(1.0/self.beta))
-		
-		#self.fullStatistics()
+				
+		#pdb.set_trace()
 		
 		if (self.selectedAction == self.actionTerminate):
 			print "Stopping at iteration {0} - max_delta_ml={1}".format(self.loop, self.deltaLogMarginal[0,0])
@@ -491,7 +491,7 @@ class rvm(object):
 		self.index = np.argsort(self.Used)
 		self.relevant = self.Used[self.index]
 		self.value = self.Mu[self.index] / np.atleast_2d(self.scales[self.Used[self.index]]).T
-		self.Alpha = self.Alpha[self.index] / (np.atleast_2d(self.scales[self.Used[self.index]]).T)**2
+		#self.Alpha = self.Alpha[self.index] / (np.atleast_2d(self.scales[self.Used[self.index]]).T)**2
 				
 		self.wInferred = np.zeros((self.MFull,1))
 		self.wInferred[self.relevant] = self.value
@@ -543,7 +543,7 @@ oeta0 = 0.6
 #
 ###############################
 npoint = 201l
-sint_noise = 5.e-3
+sint_noise = 1.e-3
 ###############################
 #   PARAMETROS DEL MODELO MILNE EDINGTON
 elem, ions, lamb, vandw_factor, potexc, s1, l1, j1, s2, l2, j2, param1, param2, mn = me.lineas(name, ind_in)
@@ -552,31 +552,38 @@ elem, ions, lamb, vandw_factor, potexc, s1, l1, j1, s2, l2, j2, param1, param2, 
 lambv = me.lamb_vec(lamb, npoint)
 stokI, stokQ, stokU, stokV = me.sintetizador(oBmag, odeltalambdaD, oomegam, otheta, ochi, obr, oadamp, oeta0, lamb, lambv, s1, l1, j1, s2, l2, j2, mn, noise=sint_noise)
 
-stokIo = stokI
-stokQo = stokQ
-stokUo = stokU
-stokVo = stokV
+stokIo = stokI.copy()
+stokQo = stokQ.copy()
+stokUo = stokU.copy()
+stokVo = stokV.copy()
 #Una vez con los datos originales, le metemos una serie de ruidos:
 #POR AHORA NOS QUEDAMOS CON LA INTENSIDAD NADA MAS:
 
+systematics = np.zeros(npoint)
 for index in range(4):
 	dum = (np.linspace(0,npoint,npoint)-index*40.)**(index+1)
 	dum = dum / np.abs(dum).max() * 0.04
-	stokI = stokI + dum
-	stokQ = stokQ + dum
-	stokU = stokU + dum
-	stokV = stokV + dum
+	stokI += dum
+	stokQ += dum
+	stokU += dum
+	stokV += dum
+	systematics += dum
 	
+stokI += sint_noise * np.random.randn(npoint)
+stokQ += sint_noise * np.random.randn(npoint)
+stokU += sint_noise * np.random.randn(npoint)
+stokV += sint_noise * np.random.randn(npoint)	
 
 pl.subplot(2,2,1)
-pl.plot(lambv, stokI)
+pl.plot(lambv, stokI, 'g')
 pl.subplot(2,2,2)
-pl.plot(lambv, stokQ)
+pl.plot(lambv, stokQ, 'g')
 pl.subplot(2,2,3)
-pl.plot(lambv, stokU)
+pl.plot(lambv, stokU, 'g')
 pl.subplot(2,2,4)
-pl.plot(lambv, stokV)
+pl.plot(lambv, stokV, 'g')
 pl.show()
+
 
 #$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
 #ESTO ES LO QUE TENGO COMO OBSERVACION
@@ -616,7 +623,7 @@ br = 6.
 adamp = 1.5
 eta0 = 1.
 
-iBmag, iomegam, iadamp, ibr, itheta, ichi, ieta0, ideltalambdaD = me.marquadt(stokI, stokQ, stokU, stokV, Bmag, deltalambdaD, omegam, theta, chi, br, adamp, eta0, lamb, lambv, s1, l1, j1, s2, l2, j2, mn, itmax=2l, lambdap=2., noise=1.e-3)
+iBmag, iomegam, iadamp, ibr, itheta, ichi, ieta0, ideltalambdaD, lambdap = me.marquadt(stokI, stokQ, stokU, stokV, Bmag, deltalambdaD, omegam, theta, chi, br, adamp, eta0, lamb, lambv, s1, l1, j1, s2, l2, j2, mn, itmax=2l, lambdap=2., noise=sint_noise)
 
 stokIp, stokQp, stokUp, stokVp = me.sintetizador(iBmag, ideltalambdaD, iomegam, itheta / 180. * np.pi, ichi / 180. * np.pi, ibr, iadamp, ieta0, lamb, lambv, s1, l1, j1, s2, l2, j2, mn)
 
@@ -675,6 +682,7 @@ rvminI = stokI - stokIp
 rvminQ = stokQ - stokQp
 rvminU = stokU - stokUp
 rvminV = stokV - stokVp
+
 # Instantitate the RVM object and train it
 rvmin = np.concatenate([rvminI, rvminQ, rvminU, rvminV])
 p = rvm(Basis, rvmin, sint_noise)
@@ -702,24 +710,27 @@ while (conditrvmme != 1):
 	
 	pl.figure(figsize=(12,10))
 	pl.subplot(2,2,1)
-	pl.plot(stokIp+system[0:N],'r',label='AjusteF')	
-	pl.plot(system[0:N],'g',label='System')
+	pl.plot(stokIp+system[0:N],'r',label='Full fit')	
+	pl.plot(system[0:N],'g',label='Fit syst.')
+	pl.plot(systematics[0:N],'c',label='Original syst.')
 	pl.subplot(2,2,2)
 	pl.plot(stokQp+system[N:2*N],'r')
 	pl.plot(system[N:2*N],'g')
+	pl.plot(systematics[0:N],'c')
 	pl.subplot(2,2,3)
 	pl.plot(stokUp+system[2*N:3*N],'r')
 	pl.plot(system[2*N:3*N],'g')
+	pl.plot(systematics[0:N],'c')
 	pl.subplot(2,2,4)
 	pl.plot(stokVp+system[3*N:],'r')
 	pl.plot(system[3*N:],'g')
-	pl.show()
+	pl.plot(systematics[0:N],'c')
 	
 	pl.subplot(2,2,1)
-	pl.plot(stokIo, 'k',label='Orig.L')
-	pl.plot(stokIp, 'b',label='Ajuste')
-	pl.plot(stokI, 'y', label='Orig.S')
-	pl.legend()
+	pl.plot(stokIo, 'k',label='Original no syst.')
+	pl.plot(stokIp, 'b',label='Fit no syst.')
+	pl.plot(stokI, 'y', label='Original no noise')
+	pl.legend(loc='lower left')
 	pl.subplot(2,2,2)
 	pl.plot(stokQo, 'k')
 	pl.plot(stokQp, 'b')
@@ -734,26 +745,7 @@ while (conditrvmme != 1):
 	pl.plot(stokV, 'y')
 	pl.show()
 
-	marqinI = stokIo #- system[0:N]
-	marqinQ = stokQo #- system[N:2*N]
-	marqinU = stokUo #- system[2*N:3*N]
-	marqinV = stokVo #- system[3*N:]
-
-	#pl.subplot(2,2,1)
-	#pl.plot(stokIo, 'b')
-	#pl.plot(marqinI, 'r')
-	#pl.subplot(2,2,2)
-	#pl.plot(stokQo, 'b')
-	#pl.plot(marqinQ, 'r')
-	#pl.subplot(2,2,3)
-	#pl.plot(stokUo, 'b')
-	#pl.plot(marqinU, 'r')
-	#pl.subplot(2,2,4)
-	#pl.plot(stokVo, 'b')
-	#pl.plot(marqinV, 'r')
-	#pl.show()
-
-	iBmag, iomegam, iadamp, ibr, itheta, ichi, ieta0, ideltalambdaD = me.marquadt(marqinI, marqinQ, marqinU, marqinV, Bmag, deltalambdaD, omegam, theta, chi, br, adamp, eta0, lamb, lambv, s1, l1, j1, s2, l2, j2, mn, itmax=3, lambdap=10., noise=1.e-3,Mneg=p.Mneg,fact=2.)
+	iBmag, iomegam, iadamp, ibr, itheta, ichi, ieta0, ideltalambdaD, lambdap = me.marquadt(stokI, stokQ, stokU, stokV, Bmag, deltalambdaD, omegam, theta, chi, br, adamp, eta0, lamb, lambv, s1, l1, j1, s2, l2, j2, mn, itmax=7, lambdap=lambdap, noise=sint_noise, Mneg=p.Mneg, fact=2.)
 	
 	stokIp, stokQp, stokUp, stokVp = me.sintetizador(iBmag, ideltalambdaD, iomegam, itheta / 180. * np.pi, ichi / 180. * np.pi, ibr, iadamp, ieta0, lamb, lambv, s1, l1, j1, s2, l2, j2, mn)
 
@@ -770,22 +762,17 @@ while (conditrvmme != 1):
 	adamp = iadamp
 	eta0 = ieta0
 
-	rvminI = stokIo - stokIp
-	rvminQ = stokQo - stokQp
-	rvminU = stokUo - stokUp
-	rvminV = stokVo - stokVp
+	rvminI = stokI - stokIp
+	rvminQ = stokQ - stokQp
+	rvminU = stokU - stokUp
+	rvminV = stokV - stokVp
 	# Modify the targets for the RVM training
 	rvmin = np.concatenate([rvminI, rvminQ, rvminU, rvminV])
 	p.TargetsUpdate(rvmin)
-	p.nIteration(4)
+	p.nIteration(10)
 
-	#pdb.set_trace()
+	pdb.set_trace()
 
 	pl.close()
 
 	counter += 1
-
-
-
-
-
